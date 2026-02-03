@@ -37,13 +37,13 @@ int riscv_socket_count(const MachineState *ms)
 
 int riscv_socket_first_hartid(const MachineState *ms, int socket_id)
 {
-    int i, first_hartid = ms->smp.cpus;
+    int i, first_hartid = ms->smp.max_cpus;
 
     if (!numa_enabled(ms)) {
         return (!socket_id) ? 0 : -1;
     }
 
-    for (i = 0; i < ms->smp.cpus; i++) {
+    for (i = 0; i < ms->smp.max_cpus; i++) {
         if (ms->possible_cpus->cpus[i].props.node_id != socket_id) {
             continue;
         }
@@ -52,7 +52,7 @@ int riscv_socket_first_hartid(const MachineState *ms, int socket_id)
         }
     }
 
-    return (first_hartid < ms->smp.cpus) ? first_hartid : -1;
+    return (first_hartid < ms->smp.max_cpus) ? first_hartid : -1;
 }
 
 int riscv_socket_last_hartid(const MachineState *ms, int socket_id)
@@ -60,10 +60,10 @@ int riscv_socket_last_hartid(const MachineState *ms, int socket_id)
     int i, last_hartid = -1;
 
     if (!numa_enabled(ms)) {
-        return (!socket_id) ? ms->smp.cpus - 1 : -1;
+        return (!socket_id) ? ms->smp.max_cpus - 1 : -1;
     }
 
-    for (i = 0; i < ms->smp.cpus; i++) {
+    for (i = 0; i < ms->smp.max_cpus; i++) {
         if (ms->possible_cpus->cpus[i].props.node_id != socket_id) {
             continue;
         }
@@ -72,7 +72,7 @@ int riscv_socket_last_hartid(const MachineState *ms, int socket_id)
         }
     }
 
-    return (last_hartid < ms->smp.cpus) ? last_hartid : -1;
+    return (last_hartid < ms->smp.max_cpus) ? last_hartid : -1;
 }
 
 int riscv_socket_hart_count(const MachineState *ms, int socket_id)
@@ -80,7 +80,7 @@ int riscv_socket_hart_count(const MachineState *ms, int socket_id)
     int first_hartid, last_hartid;
 
     if (!numa_enabled(ms)) {
-        return (!socket_id) ? ms->smp.cpus : -1;
+        return (!socket_id) ? ms->smp.max_cpus : -1;
     }
 
     first_hartid = riscv_socket_first_hartid(ms, socket_id);
@@ -207,14 +207,14 @@ int64_t riscv_numa_get_default_cpu_node_id(const MachineState *ms, int idx)
 {
     int64_t nidx = 0;
 
-    if (ms->numa_state->num_nodes > ms->smp.cpus) {
+    if (ms->numa_state->num_nodes > ms->smp.max_cpus) {
         error_report("Number of NUMA nodes (%d)"
                      " cannot exceed the number of available CPUs (%u).",
-                     ms->numa_state->num_nodes, ms->smp.cpus);
+                     ms->numa_state->num_nodes, ms->smp.max_cpus);
         exit(EXIT_FAILURE);
     }
     if (ms->numa_state->num_nodes) {
-        nidx = idx / (ms->smp.cpus / ms->numa_state->num_nodes);
+        nidx = idx / (ms->smp.max_cpus / ms->numa_state->num_nodes);
         if (ms->numa_state->num_nodes <= nidx) {
             nidx = ms->numa_state->num_nodes - 1;
         }

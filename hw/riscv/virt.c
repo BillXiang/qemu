@@ -242,7 +242,7 @@ static void create_fdt_socket_cpus(RISCVVirtState *s, int socket,
     MachineState *ms = MACHINE(s);
     bool is_32_bit = riscv_is_32bit(&s->soc[0]);
 
-    for (cpu = s->soc[socket].num_harts - 1; cpu >= 0; cpu--) {
+    for (cpu = s->soc[socket].max_num_harts - 1; cpu >= 0; cpu--) {
         RISCVCPU *cpu_ptr = &s->soc[socket].harts[cpu];
         int8_t satp_mode_max = cpu_ptr->cfg.max_satp_mode;
         g_autofree char *cpu_name = NULL;
@@ -333,9 +333,9 @@ static void create_fdt_socket_clint(RISCVVirtState *s,
         "sifive,clint0", "riscv,clint0"
     };
 
-    clint_cells = g_new0(uint32_t, s->soc[socket].num_harts * 4);
+    clint_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 4);
 
-    for (cpu = 0; cpu < s->soc[socket].num_harts; cpu++) {
+    for (cpu = 0; cpu < s->soc[socket].max_num_harts; cpu++) {
         clint_cells[cpu * 4 + 0] = cpu_to_be32(intc_phandles[cpu]);
         clint_cells[cpu * 4 + 1] = cpu_to_be32(IRQ_M_SOFT);
         clint_cells[cpu * 4 + 2] = cpu_to_be32(intc_phandles[cpu]);
@@ -352,7 +352,7 @@ static void create_fdt_socket_clint(RISCVVirtState *s,
     qemu_fdt_setprop_sized_cells(ms->fdt, clint_name, "reg",
         2, clint_addr, 2, s->memmap[VIRT_CLINT].size);
     qemu_fdt_setprop(ms->fdt, clint_name, "interrupts-extended",
-        clint_cells, s->soc[socket].num_harts * sizeof(uint32_t) * 4);
+        clint_cells, s->soc[socket].max_num_harts * sizeof(uint32_t) * 4);
     riscv_socket_fdt_write_id(ms, clint_name, socket);
 }
 
@@ -369,11 +369,11 @@ static void create_fdt_socket_aclint(RISCVVirtState *s,
     g_autofree uint32_t *aclint_mtimer_cells = NULL;
     MachineState *ms = MACHINE(s);
 
-    aclint_mswi_cells = g_new0(uint32_t, s->soc[socket].num_harts * 2);
-    aclint_mtimer_cells = g_new0(uint32_t, s->soc[socket].num_harts * 2);
-    aclint_sswi_cells = g_new0(uint32_t, s->soc[socket].num_harts * 2);
+    aclint_mswi_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 2);
+    aclint_mtimer_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 2);
+    aclint_sswi_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 2);
 
-    for (cpu = 0; cpu < s->soc[socket].num_harts; cpu++) {
+    for (cpu = 0; cpu < s->soc[socket].max_num_harts; cpu++) {
         aclint_mswi_cells[cpu * 2 + 0] = cpu_to_be32(intc_phandles[cpu]);
         aclint_mswi_cells[cpu * 2 + 1] = cpu_to_be32(IRQ_M_SOFT);
         aclint_mtimer_cells[cpu * 2 + 0] = cpu_to_be32(intc_phandles[cpu]);
@@ -381,7 +381,7 @@ static void create_fdt_socket_aclint(RISCVVirtState *s,
         aclint_sswi_cells[cpu * 2 + 0] = cpu_to_be32(intc_phandles[cpu]);
         aclint_sswi_cells[cpu * 2 + 1] = cpu_to_be32(IRQ_S_SOFT);
     }
-    aclint_cells_size = s->soc[socket].num_harts * sizeof(uint32_t) * 2;
+    aclint_cells_size = s->soc[socket].max_num_harts * sizeof(uint32_t) * 2;
 
     if (s->aia_type != VIRT_AIA_TYPE_APLIC_IMSIC) {
         addr = s->memmap[VIRT_CLINT].base +
@@ -472,20 +472,20 @@ static void create_fdt_socket_plic(RISCVVirtState *s,
     qemu_fdt_setprop(ms->fdt, plic_name, "interrupt-controller", NULL, 0);
 
     if (kvm_enabled()) {
-        plic_cells = g_new0(uint32_t, s->soc[socket].num_harts * 2);
+        plic_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 2);
 
-        for (cpu = 0; cpu < s->soc[socket].num_harts; cpu++) {
+        for (cpu = 0; cpu < s->soc[socket].max_num_harts; cpu++) {
             plic_cells[cpu * 2 + 0] = cpu_to_be32(intc_phandles[cpu]);
             plic_cells[cpu * 2 + 1] = cpu_to_be32(IRQ_S_EXT);
         }
 
         qemu_fdt_setprop(ms->fdt, plic_name, "interrupts-extended",
                          plic_cells,
-                         s->soc[socket].num_harts * sizeof(uint32_t) * 2);
+                         s->soc[socket].max_num_harts * sizeof(uint32_t) * 2);
    } else {
-        plic_cells = g_new0(uint32_t, s->soc[socket].num_harts * 4);
+        plic_cells = g_new0(uint32_t, s->soc[socket].max_num_harts * 4);
 
-        for (cpu = 0; cpu < s->soc[socket].num_harts; cpu++) {
+        for (cpu = 0; cpu < s->soc[socket].max_num_harts; cpu++) {
             plic_cells[cpu * 4 + 0] = cpu_to_be32(intc_phandles[cpu]);
             plic_cells[cpu * 4 + 1] = cpu_to_be32(IRQ_M_EXT);
             plic_cells[cpu * 4 + 2] = cpu_to_be32(intc_phandles[cpu]);
@@ -494,7 +494,7 @@ static void create_fdt_socket_plic(RISCVVirtState *s,
 
         qemu_fdt_setprop(ms->fdt, plic_name, "interrupts-extended",
                          plic_cells,
-                         s->soc[socket].num_harts * sizeof(uint32_t) * 4);
+                         s->soc[socket].max_num_harts * sizeof(uint32_t) * 4);
     }
 
     qemu_fdt_setprop_sized_cells(ms->fdt, plic_name, "reg",
@@ -539,10 +539,10 @@ static void create_fdt_one_imsic(RISCVVirtState *s, hwaddr base_addr,
         "qemu,imsics", "riscv,imsics"
     };
 
-    imsic_cells = g_new0(uint32_t, ms->smp.cpus * 2);
+    imsic_cells = g_new0(uint32_t, ms->smp.max_cpus * 2);
     imsic_regs = g_new0(uint32_t, socket_count * 4);
 
-    for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
+    for (cpu = 0; cpu < ms->smp.max_cpus; cpu++) {
         imsic_cells[cpu * 2 + 0] = cpu_to_be32(intc_phandles[cpu]);
         imsic_cells[cpu * 2 + 1] = cpu_to_be32(m_mode ? IRQ_M_EXT : IRQ_S_EXT);
     }
@@ -551,13 +551,13 @@ static void create_fdt_one_imsic(RISCVVirtState *s, hwaddr base_addr,
     for (socket = 0; socket < socket_count; socket++) {
         imsic_addr = base_addr + socket * VIRT_IMSIC_GROUP_MAX_SIZE;
         imsic_size = IMSIC_HART_SIZE(imsic_guest_bits) *
-                     s->soc[socket].num_harts;
+                     s->soc[socket].max_num_harts;
         imsic_regs[socket * 4 + 0] = 0;
         imsic_regs[socket * 4 + 1] = cpu_to_be32(imsic_addr);
         imsic_regs[socket * 4 + 2] = 0;
         imsic_regs[socket * 4 + 3] = cpu_to_be32(imsic_size);
-        if (imsic_max_hart_per_socket < s->soc[socket].num_harts) {
-            imsic_max_hart_per_socket = s->soc[socket].num_harts;
+        if (imsic_max_hart_per_socket < s->soc[socket].max_num_harts) {
+            imsic_max_hart_per_socket = s->soc[socket].max_num_harts;
         }
     }
 
@@ -573,7 +573,7 @@ static void create_fdt_one_imsic(RISCVVirtState *s, hwaddr base_addr,
     qemu_fdt_setprop(ms->fdt, imsic_name, "interrupt-controller", NULL, 0);
     qemu_fdt_setprop(ms->fdt, imsic_name, "msi-controller", NULL, 0);
     qemu_fdt_setprop(ms->fdt, imsic_name, "interrupts-extended",
-                     imsic_cells, ms->smp.cpus * sizeof(uint32_t) * 2);
+                     imsic_cells, ms->smp.max_cpus * sizeof(uint32_t) * 2);
     qemu_fdt_setprop(ms->fdt, imsic_name, "reg", imsic_regs,
                      socket_count * sizeof(uint32_t) * 4);
     qemu_fdt_setprop_cell(ms->fdt, imsic_name, "riscv,num-ids",
@@ -765,12 +765,12 @@ static void create_fdt_sockets(RISCVVirtState *s,
     qemu_fdt_setprop_cell(ms->fdt, "/cpus", "#address-cells", 0x1);
     qemu_fdt_add_subnode(ms->fdt, "/cpus/cpu-map");
 
-    intc_phandles = g_new0(uint32_t, ms->smp.cpus);
+    intc_phandles = g_new0(uint32_t, ms->smp.max_cpus);
 
-    phandle_pos = ms->smp.cpus;
+    phandle_pos = ms->smp.max_cpus;
     for (socket = (socket_count - 1); socket >= 0; socket--) {
         g_autofree char *clust_name = NULL;
-        phandle_pos -= s->soc[socket].num_harts;
+        phandle_pos -= s->soc[socket].max_num_harts;
 
         clust_name = g_strdup_printf("/cpus/cpu-map/cluster%d", socket);
         qemu_fdt_add_subnode(ms->fdt, clust_name);
@@ -803,15 +803,15 @@ static void create_fdt_sockets(RISCVVirtState *s,
         create_fdt_socket_aplic(s, 0,
                                 msi_m_phandle, msi_s_phandle, phandle,
                                 &intc_phandles[0], xplic_phandles,
-                                ms->smp.cpus);
+                                ms->smp.max_cpus);
 
         *irq_mmio_phandle = xplic_phandles[0];
         *irq_virtio_phandle = xplic_phandles[0];
         *irq_pcie_phandle = xplic_phandles[0];
     } else {
-        phandle_pos = ms->smp.cpus;
+        phandle_pos = ms->smp.max_cpus;
         for (socket = (socket_count - 1); socket >= 0; socket--) {
-            phandle_pos -= s->soc[socket].num_harts;
+            phandle_pos -= s->soc[socket].max_num_harts;
 
             if (s->aia_type == VIRT_AIA_TYPE_NONE) {
                 create_fdt_socket_plic(s, socket, phandle,
@@ -822,7 +822,7 @@ static void create_fdt_sockets(RISCVVirtState *s,
                                         msi_m_phandle, msi_s_phandle, phandle,
                                         &intc_phandles[phandle_pos],
                                         xplic_phandles,
-                                        s->soc[socket].num_harts);
+                                        s->soc[socket].max_num_harts);
             }
         }
 
@@ -1307,7 +1307,7 @@ static FWCfgState *create_fw_cfg(const MachineState *ms, hwaddr base)
 
     fw_cfg = fw_cfg_init_mem_wide(base + 8, base, 8, base + 16,
                                   &address_space_memory);
-    fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, (uint16_t)ms->smp.cpus);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, (uint16_t)ms->smp.max_cpus);
 
     return fw_cfg;
 }
@@ -1608,6 +1608,8 @@ static void virt_machine_init(MachineState *machine)
         object_property_set_int(OBJECT(&s->soc[i]), "hartid-base",
                                 base_hartid, &error_abort);
         object_property_set_int(OBJECT(&s->soc[i]), "num-harts",
+                                machine->smp.cpus, &error_abort);
+        object_property_set_int(OBJECT(&s->soc[i]), "max-num-harts",
                                 hart_count, &error_abort);
         sysbus_realize(SYS_BUS_DEVICE(&s->soc[i]), &error_fatal);
 

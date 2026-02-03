@@ -347,7 +347,7 @@ static void build_rhct(GArray *table_data,
                               RISCV_ACLINT_DEFAULT_TIMEBASE_FREQ, 8);
 
     /* ISA + N hart info */
-    num_rhct_nodes = 1 + ms->smp.cpus;
+    num_rhct_nodes = 1 + ms->smp.max_cpus;
     if (cpu->cfg.ext_zicbom || cpu->cfg.ext_zicboz) {
         num_rhct_nodes++;
     }
@@ -620,8 +620,8 @@ static void build_madt(GArray *table_data,
     uint8_t  socket;
 
     for (socket = 0; socket < riscv_socket_count(ms); socket++) {
-        if (imsic_max_hart_per_socket < s->soc[socket].num_harts) {
-            imsic_max_hart_per_socket = s->soc[socket].num_harts;
+        if (imsic_max_hart_per_socket < s->soc[socket].max_num_harts) {
+            imsic_max_hart_per_socket = s->soc[socket].max_num_harts;
         }
     }
 
@@ -677,7 +677,7 @@ static void build_madt(GArray *table_data,
             /* Number of IDCs */
             if (s->aia_type == VIRT_AIA_TYPE_APLIC) {
                 build_append_int_noprefix(table_data,
-                                          s->soc[socket].num_harts,
+                                          s->soc[socket].max_num_harts,
                                           2);
             } else {
                 build_append_int_noprefix(table_data, 0, 2);

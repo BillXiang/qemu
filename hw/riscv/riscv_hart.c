@@ -32,6 +32,7 @@
 
 static const Property riscv_harts_props[] = {
     DEFINE_PROP_UINT32("num-harts", RISCVHartArrayState, num_harts, 1),
+    DEFINE_PROP_UINT32("max-num-harts", RISCVHartArrayState, max_num_harts, 1),
     DEFINE_PROP_UINT32("hartid-base", RISCVHartArrayState, hartid_base, 0),
     DEFINE_PROP_STRING("cpu-type", RISCVHartArrayState, cpu_type),
     DEFINE_PROP_UINT64("resetvec", RISCVHartArrayState, resetvec,
@@ -150,13 +151,13 @@ static void riscv_harts_realize(DeviceState *dev, Error **errp)
     RISCVHartArrayState *s = RISCV_HART_ARRAY(dev);
     int n;
 
-    s->harts = g_new0(RISCVCPU, s->num_harts);
+    s->harts = g_new0(RISCVCPU, s->max_num_harts);
 
 #ifndef CONFIG_USER_ONLY
     riscv_cpu_register_csr_qtest_callback();
 #endif
 
-    for (n = 0; n < s->num_harts; n++) {
+    for (n = 0; n < s->max_num_harts; n++) {
         if (!riscv_hart_realize(s, n, s->cpu_type, errp)) {
             return;
         }
