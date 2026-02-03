@@ -1908,6 +1908,63 @@ static void virt_set_acpi(Object *obj, Visitor *v, const char *name,
     visit_type_OnOffAuto(v, name, &s->acpi, errp);
 }
 
+static void virt_cpu_unplug_request(HotplugHandler *hotplug_dev,
+                                    DeviceState *dev, Error **errp)
+{
+    MachineState *ms = MACHINE(hotplug_dev);
+    RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+    CPUState *cs = CPU(dev);
+    Error *err = NULL;
+
+    if (cs->cpu_index == 0) {
+        error_setg(errp, "hot-unplug of boot cpu(id%d) not supported",
+                   cs->cpu_index);
+        error_propagate(errp, err);
+	return;
+    }
+
+    hotplug_handler_unplug_request(HOTPLUG_HANDLER(s->acpi_ged), dev, &err);
+    if (err) {
+        error_propagate(errp, err);
+    }
+}
+
+int hotplugged = 0;
+static void virt_cpu_unplug(HotplugHandler *hotplug_dev,
+                            DeviceState *dev, Error **errp)
+{
+    MachineState *ms = MACHINE(hotplug_dev);
+    RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+
+    /* Notify acpi ged CPU removed */
+    hotplug_handler_unplug(HOTPLUG_HANDLER(s->acpi_ged), dev, &error_abort);
+    hotplugged--;
+}
+
+static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
+                              DeviceState *dev, Error **errp)
+{
+    MachineState *ms = MACHINE(hotplug_dev);
+    RISCVCPU *cpu = RISCV_CPU(dev);
+
+    if (dev->hotplugged) {
+        cpu->env.mhartid =  ms->smp.cpus + hotplugged;
+        hotplugged++;
+    }
+}
+
+static void virt_cpu_plug(HotplugHandler *hotplug_dev,
+                          DeviceState *dev, Error **errp)
+{
+    MachineState *ms = MACHINE(hotplug_dev);
+    RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+
+    if (s->acpi_ged) {
+        hotplug_handler_plug(HOTPLUG_HANDLER(s->acpi_ged), dev,
+                             &error_abort);
+    }
+}
+
 static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
                                                         DeviceState *dev)
 {
@@ -1918,6 +1975,10 @@ static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
         object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_IOMMU_PCI) ||
         object_dynamic_cast(OBJECT(dev), TYPE_RISCV_IOMMU_PCI)) {
         s->iommu_sys = ON_OFF_AUTO_OFF;
+        return HOTPLUG_HANDLER(machine);
+    }
+
+    if (object_dynamic_cast(OBJECT(dev), TYPE_RISCV_CPU)) {
         return HOTPLUG_HANDLER(machine);
     }
 
@@ -1946,6 +2007,34 @@ static void virt_machine_device_plug_cb(HotplugHandler *hotplug_dev,
         create_fdt_iommu(s, pci_get_bdf(PCI_DEVICE(dev)));
         s->iommu_sys = ON_OFF_AUTO_OFF;
     }
+
+    if (object_dynamic_cast(OBJECT(dev), TYPE_RISCV_CPU)) {
+        virt_cpu_plug(hotplug_dev, dev, errp);
+    }
+}
+
+static void virt_machine_device_pre_plug(HotplugHandler *hotplug_dev,
+                                            DeviceState *dev, Error **errp)
+{
+    if (object_dynamic_cast(OBJECT(dev), TYPE_RISCV_CPU)) {
+        virt_cpu_pre_plug(hotplug_dev, dev, errp);
+    }
+}
+
+static void virt_machine_device_unplug_request(HotplugHandler *hotplug_dev,
+                                            DeviceState *dev, Error **errp)
+{
+    if (object_dynamic_cast(OBJECT(dev), TYPE_RISCV_CPU)) {
+        virt_cpu_unplug_request(hotplug_dev, dev, errp);
+    }
+}
+
+static void virt_machine_device_unplug(HotplugHandler *hotplug_dev,
+                                            DeviceState *dev, Error **errp)
+{
+    if (object_dynamic_cast(OBJECT(dev), TYPE_RISCV_CPU)) {
+        virt_cpu_unplug(hotplug_dev, dev, errp);
+    }
 }
 
 static void virt_machine_class_init(ObjectClass *oc, const void *data)
@@ -1967,10 +2056,14 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
     /* platform instead of architectural choice */
     mc->cpu_cluster_has_numa_boundary = true;
     mc->default_ram_id = "riscv_virt_board.ram";
+    mc->has_hotpluggable_cpus = true;
     assert(!mc->get_hotplug_handler);
     mc->get_hotplug_handler = virt_machine_get_hotplug_handler;
 
     hc->plug = virt_machine_device_plug_cb;
+    hc->pre_plug = virt_machine_device_pre_plug;
+    hc->unplug_request = virt_machine_device_unplug_request;
+    hc->unplug = virt_machine_device_unplug;
 
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_UEFI_VARS_SYSBUS);
