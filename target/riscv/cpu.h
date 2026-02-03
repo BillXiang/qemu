@@ -547,6 +547,8 @@ struct ArchCPU {
     /* Mapping of events to counters */
     GHashTable *pmu_event_ctr_map;
     const GPtrArray *decoders;
+
+    bool plugged;
 };
 
 typedef struct RISCVCSR RISCVCSR;

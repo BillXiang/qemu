@@ -948,8 +948,12 @@ static void riscv_cpu_realize(DeviceState *dev, Error **errp)
     }
 #endif
 
-    qemu_init_vcpu(cs);
-    cpu_reset(cs);
+    if (cpu->plugged) {
+        qemu_init_vcpu(cs);
+        cpu_reset(cs);
+    } else {
+        kvm_create_and_park_vcpu(cs);
+    }
 
     mcc->parent_realize(dev, errp);
 }

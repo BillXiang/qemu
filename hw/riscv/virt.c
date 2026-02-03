@@ -1959,6 +1959,7 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
 
     if (dev->hotplugged) {
         cpu->env.mhartid =  ms->smp.cpus + hotplugged;
+	cpu->plugged = true;
         hotplugged++;
     }
 }

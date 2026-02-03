@@ -114,10 +114,12 @@ static void riscv_cpu_register_csr_qtest_callback(void)
 #endif
 
 static bool riscv_hart_realize(RISCVHartArrayState *s, int idx,
-                               char *cpu_type, Error **errp)
+                               char *cpu_type, bool pluuged, Error **errp)
 {
     object_initialize_child(OBJECT(s), "harts[*]", &s->harts[idx], cpu_type);
     qdev_prop_set_uint64(DEVICE(&s->harts[idx]), "resetvec", s->resetvec);
+
+    s->harts[idx].plugged = plugged;
 
     if (s->harts[idx].cfg.ext_smrnmi) {
         if (idx < s->num_rnmi_irqvec) {
