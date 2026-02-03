@@ -1423,6 +1423,8 @@ int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
 
 int kvm_arch_destroy_vcpu(CPUState *cs)
 {
+    RISCVCPU *cpu = RISCV_CPU(cs);
+    qemu_del_vm_change_state_handler(cpu->vmsentry);
     return 0;
 }
 
@@ -1498,7 +1500,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
     int ret = 0;
     RISCVCPU *cpu = RISCV_CPU(cs);
 
-    qemu_add_vm_change_state_handler(kvm_riscv_vm_state_change, cs);
+    cpu->vmsentry = qemu_add_vm_change_state_handler(kvm_riscv_vm_state_change, cs);
 
     if (!object_dynamic_cast(OBJECT(cpu), TYPE_RISCV_CPU_HOST)) {
         ret = kvm_vcpu_set_machine_ids(cpu, cs);

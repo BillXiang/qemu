@@ -549,6 +549,7 @@ struct ArchCPU {
     const GPtrArray *decoders;
 
     bool plugged;
+    VMChangeStateEntry *vmsentry;
 };
 
 typedef struct RISCVCSR RISCVCSR;
