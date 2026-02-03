@@ -1562,7 +1562,7 @@ static void virt_machine_init(MachineState *machine)
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *mask_rom = g_new(MemoryRegion, 1);
     DeviceState *mmio_irqchip, *virtio_irqchip, *pcie_irqchip;
-    int i, base_hartid, hart_count;
+    int i, j, base_hartid, hart_count;
     int socket_count = riscv_socket_count(machine);
 
     s->memmap = virt_memmap;
@@ -1778,6 +1778,14 @@ static void virt_machine_init(MachineState *machine)
                                  &error_fatal);
 
         sysbus_realize_and_unref(SYS_BUS_DEVICE(iommu_sys), &error_fatal);
+    }
+
+    for (i = 0; i < socket_count; i++) {
+        for (j = 0; j < machine->smp.max_cpus; j++) {
+            if (j >= machine->smp.cpus) {
+                cpu_exec_unrealizefn(CPU(&s->soc[i].harts[j]));
+	    }
+	}
     }
 
     s->machine_done.notify = virt_machine_done;

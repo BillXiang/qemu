@@ -789,7 +789,9 @@ void cpu_destroy_address_spaces(CPUState *cpu)
     CPUAddressSpace *cpuas;
     int asidx;
 
-    assert(cpu->cpu_ases);
+    if (!cpu->cpu_ases) {
+        return;
+    }
 
     /* convenience alias just points to some cpu_ases[n] */
     cpu->as = NULL;
