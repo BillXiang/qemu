@@ -469,9 +469,9 @@ static void kvm_riscv_update_cpu_cfg_isa_ext(RISCVCPU *cpu, CPUState *cs)
         reg = kvm_cpu_cfg_get(cpu, multi_ext_cfg);
         ret = kvm_set_one_reg(cs, id, &reg);
         if (ret != 0) {
-            if (!reg && ret == -EINVAL) {
-                warn_report("KVM cannot disable extension %s",
-                            multi_ext_cfg->name);
+            if (!reg) {
+                warn_report("KVM cannot disable extension %s, error %d",
+                            multi_ext_cfg->name, ret);
             } else {
                 error_report("Unable to enable extension %s in KVM, error %d",
                              multi_ext_cfg->name, ret);
@@ -1511,6 +1511,11 @@ int kvm_arch_init_vcpu(CPUState *cs)
     kvm_riscv_update_cpu_cfg_isa_ext(cpu, cs);
 
     ret = kvm_vcpu_enable_sbi_dbcn(cpu, cs);
+    if (ret == -EBUSY) {
+        // kvm will return EBUSY after the vcpu has ran atleast once,
+	// ignore it for plug after unplug.
+        ret = 0;
+    }
 
     return ret;
 }
