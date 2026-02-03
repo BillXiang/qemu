@@ -1945,6 +1945,9 @@ static void virt_cpu_unplug(HotplugHandler *hotplug_dev,
 {
     MachineState *ms = MACHINE(hotplug_dev);
     RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+    CPUState *cs = CPU(dev);
+
+    cpu_remove_sync(cs);
 
     /* Notify acpi ged CPU removed */
     hotplug_handler_unplug(HOTPLUG_HANDLER(s->acpi_ged), dev, &error_abort);
