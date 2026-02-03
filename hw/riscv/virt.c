@@ -55,6 +55,7 @@
 #include "hw/pci-host/gpex.h"
 #include "hw/display/ramfb.h"
 #include "hw/acpi/aml-build.h"
+#include "hw/acpi/generic_event_device.h"
 #include "qapi/qapi-visit-common.h"
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/uefi/var-service-api.h"
@@ -95,6 +96,9 @@ static const MemMapEntry virt_memmap[] = {
     [VIRT_UART0] =        { 0x10000000,         0x100 },
     [VIRT_VIRTIO] =       { 0x10001000,        0x1000 },
     [VIRT_FW_CFG] =       { 0x10100000,          0x18 },
+    [VIRT_ACPI_GED_EVT] =     { 0x10101000, ACPI_GED_EVT_SEL_LEN },
+    [VIRT_ACPI_GED_MEM] =     { 0x10101000 + ACPI_GED_EVT_SEL_LEN, MEMORY_HOTPLUG_IO_LEN },
+    [VIRT_ACPI_GED_CPU] =     { 0x10101000 + ACPI_GED_EVT_SEL_LEN + MEMORY_HOTPLUG_IO_LEN, ACPI_CPU_HOTPLUG_REG_LEN },
     [VIRT_FLASH] =        { 0x20000000,     0x4000000 },
     [VIRT_IMSIC_M] =      { 0x24000000, VIRT_IMSIC_MAX_SIZE },
     [VIRT_IMSIC_S] =      { 0x28000000, VIRT_IMSIC_MAX_SIZE },
@@ -1270,6 +1274,33 @@ static inline DeviceState *gpex_pcie_init(MemoryRegion *sys_mem,
     return dev;
 }
 
+static DeviceState *create_acpi_ged(RISCVVirtState *s, DeviceState *irqchip)
+{
+    DeviceState *dev;
+    MachineState *ms = MACHINE(s);
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
+    uint32_t event = ACPI_GED_PWR_DOWN_EVT;
+
+    if (mc->has_hotpluggable_cpus) {
+        event |= ACPI_GED_CPU_HOTPLUG_EVT;
+    }
+
+    dev = qdev_new(TYPE_ACPI_GED);
+    qdev_prop_set_uint32(dev, "ged-event", event);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+
+    sysbus_mmio_map_name(SYS_BUS_DEVICE(dev), TYPE_ACPI_GED, s->memmap[VIRT_ACPI_GED_EVT].base);
+
+    if (mc->has_hotpluggable_cpus) {
+        sysbus_mmio_map_name(SYS_BUS_DEVICE(dev), "cpuhp container", s->memmap[VIRT_ACPI_GED_CPU].base);
+    }
+
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
+                       qdev_get_gpio_in(irqchip, ACPI_GED_IRQ));
+
+    return dev;
+}
+
 static FWCfgState *create_fw_cfg(const MachineState *ms, hwaddr base)
 {
     FWCfgState *fw_cfg;
@@ -1289,8 +1320,7 @@ static DeviceState *virt_create_plic(const MemMapEntry *memmap, int socket,
     /* Per-socket PLIC hart topology configuration string */
     plic_hart_config = riscv_plic_hart_config_string(hart_count);
 
-    /* Per-socket PLIC */
-    return sifive_plic_create(
+    /* Per-socket PLIC */    return sifive_plic_create(
              memmap[VIRT_PLIC].base + socket * memmap[VIRT_PLIC].size,
              plic_hart_config, hart_count, base_hartid,
              VIRT_IRQCHIP_NUM_SOURCES,
@@ -1701,6 +1731,11 @@ static void virt_machine_init(MachineState *machine)
     gpex_pcie_init(system_memory, pcie_irqchip, s);
 
     create_platform_bus(s, mmio_irqchip);
+
+    /* acpi ged */
+    if (virt_is_acpi_enabled(s)) {
+        s->acpi_ged = create_acpi_ged(s, mmio_irqchip);
+    }
 
     serial_mm_init(system_memory, s->memmap[VIRT_UART0].base,
         0, qdev_get_gpio_in(mmio_irqchip, UART0_IRQ), 399193,

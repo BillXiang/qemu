@@ -27,6 +27,7 @@
 #include "hw/acpi/acpi-defs.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/aml-build.h"
+#include "hw/acpi/generic_event_device.h"
 #include "hw/acpi/pci.h"
 #include "hw/acpi/utils.h"
 #include "hw/intc/riscv_aclint.h"
@@ -61,6 +62,9 @@ static void acpi_align_size(GArray *blob, unsigned align)
     g_array_set_size(blob, ROUND_UP(acpi_data_len(blob), align));
 }
 
+#define ACPI_MADT_ENABLED           (1)	/* 00: Processor is usable if set */
+#define ACPI_MADT_ONLINE_CAPABLE    (2)	/* 01: System HW supports enabling processor at runtime */
+
 static void riscv_acpi_madt_add_rintc(uint32_t uid,
                                       const CPUArchIdList *arch_ids,
                                       GArray *entry,
@@ -71,6 +75,7 @@ static void riscv_acpi_madt_add_rintc(uint32_t uid,
     uint32_t imsic_size, local_cpu_id, socket_id;
     uint64_t imsic_socket_addr, imsic_addr;
     MachineState *ms = MACHINE(s);
+    uint32_t flags = uid < ms->smp.cpus ? ACPI_MADT_ENABLED : ACPI_MADT_ONLINE_CAPABLE;
 
     socket_id = arch_ids->cpus[uid].props.node_id;
     local_cpu_id = (arch_ids->cpus[uid].arch_id -
@@ -84,7 +89,7 @@ static void riscv_acpi_madt_add_rintc(uint32_t uid,
     build_append_int_noprefix(entry, 36, 1);         /* Length   */
     build_append_int_noprefix(entry, 1, 1);          /* Version  */
     build_append_int_noprefix(entry, 0, 1);          /* Reserved */
-    build_append_int_noprefix(entry, 0x1, 4);        /* Flags    */
+    build_append_int_noprefix(entry, flags, 4);        /* Flags    */
     build_append_int_noprefix(entry, hart_id, 8);    /* Hart ID  */
     build_append_int_noprefix(entry, uid, 4);        /* ACPI Processor UID */
     /* External Interrupt Controller ID */
@@ -115,11 +120,49 @@ static void riscv_acpi_madt_add_rintc(uint32_t uid,
     }
 }
 
+#define CPU_LOCK          "CPLK"
+#define CPU_STS_METHOD    "CSTA"
+#define CPU_ENABLED       "CPEN"
+#define CPU_SELECTOR      "CSEL"
+#define CPU_INSERT_EVENT  "CINS"
+
 static void acpi_dsdt_add_cpus(Aml *scope, RISCVVirtState *s)
 {
     MachineClass *mc = MACHINE_GET_CLASS(s);
     MachineState *ms = MACHINE(s);
     const CPUArchIdList *arch_ids = mc->possible_cpu_arch_ids(ms);
+
+    char *cphp_res_path = g_strdup_printf("%s." CPUHP_RES_DEVICE, "\\_SB");
+    Aml *method = aml_method(CPU_STS_METHOD, 1, AML_SERIALIZED);
+    {
+        Aml *idx = aml_arg(0);
+        Aml *sta = aml_local(0);
+        Aml *zero = aml_int(0);
+        Aml *one = aml_int(1);
+
+        Aml *ctrl_lock = aml_name("%s.%s", cphp_res_path, CPU_LOCK);
+        Aml *cpu_selector = aml_name("%s.%s", cphp_res_path, CPU_SELECTOR);
+        Aml *is_enabled = aml_name("%s.%s", cphp_res_path, CPU_ENABLED);
+        Aml *ins_evt = aml_name("%s.%s", cphp_res_path, CPU_INSERT_EVENT);
+
+        aml_append(method, aml_acquire(ctrl_lock, 0xFFFF));
+        aml_append(method, aml_store(idx, cpu_selector));
+        aml_append(method, aml_store(zero, sta));
+        Aml *ifctx = aml_if(aml_equal(ins_evt, one));
+        {
+            aml_append(ifctx, aml_store(aml_int(0x1), sta));
+            aml_append(ifctx, aml_store(aml_int(0x1), is_enabled));
+        }
+        aml_append(method, ifctx);
+        ifctx = aml_if(aml_equal(is_enabled, one));
+        {
+            aml_append(ifctx, aml_store(aml_int(0xF), sta));
+        }
+        aml_append(method, ifctx);
+        aml_append(method, aml_release(ctrl_lock));
+        aml_append(method, aml_return(sta));
+     }
+     aml_append(scope, method);
 
     for (int i = 0; i < arch_ids->len; i++) {
             Aml *dev;
@@ -129,6 +172,11 @@ static void acpi_dsdt_add_cpus(Aml *scope, RISCVVirtState *s)
             aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
             aml_append(dev, aml_name_decl("_UID",
                        aml_int(arch_ids->cpus[i].arch_id)));
+
+	    Aml *uid = aml_int(i);
+            method = aml_method("_STA", 0, AML_SERIALIZED);
+            aml_append(method, aml_return(aml_call1(CPU_STS_METHOD, uid)));
+            aml_append(dev, method);
 
             /* build _MAT object */
             riscv_acpi_madt_add_rintc(i, arch_ids, madt_buf, s);
@@ -437,6 +485,47 @@ static void build_fadt_rev6(GArray *table_data,
     build_fadt(table_data, linker, &fadt, s->oem_id, s->oem_table_id);
 }
 
+static void virt_madt_cpu_entry(int uid,
+                                const CPUArchIdList *apic_ids,
+                                GArray *entry, bool force_enabled)
+{
+    uint32_t flags, hart_id = apic_ids->cpus[uid].arch_id;
+
+    flags = apic_ids->cpus[uid].cpu || force_enabled ? 1 /* Enabled */ : 0;
+
+    build_append_int_noprefix(entry, 0x18, 1);       /* Type     */
+    build_append_int_noprefix(entry, 36, 1);         /* Length   */
+    build_append_int_noprefix(entry, 1, 1);          /* Version  */
+    build_append_int_noprefix(entry, 0, 1);          /* Reserved */
+    build_append_int_noprefix(entry, flags, 4);        /* Flags    */
+    build_append_int_noprefix(entry, hart_id, 8);    /* Hart ID  */
+    build_append_int_noprefix(entry, uid, 4);        /* ACPI Processor UID */
+}
+
+static void
+build_rv_ged_aml(Aml *dsdt, RISCVVirtState *s)
+{
+    uint32_t event;
+    CPUHotplugFeatures opts;
+    MachineState *ms = MACHINE(s);
+
+    build_ged_aml(dsdt, "\\_SB."GED_DEVICE,
+              HOTPLUG_HANDLER(s->acpi_ged),
+              ACPI_GED_IRQ, AML_SYSTEM_MEMORY,
+                   s->memmap[VIRT_ACPI_GED_EVT].base);
+    event = object_property_get_uint(OBJECT(s->acpi_ged),
+                                     "ged-event", &error_abort);
+    if (event & ACPI_GED_CPU_HOTPLUG_EVT) {
+        opts.acpi_1_compatible = false;
+        opts.has_legacy_cphp = false;
+        opts.fw_unplugs_cpu = false;
+        opts.smi_path = NULL;
+        build_cpus_aml(dsdt, ms, opts, virt_madt_cpu_entry,
+                       s->memmap[VIRT_ACPI_GED_CPU].base, "\\_SB",
+                       AML_GED_EVT_CPU_SCAN_METHOD, AML_SYSTEM_MEMORY);
+    }
+}
+
 /* DSDT */
 static void build_dsdt(GArray *table_data,
                        BIOSLinker *linker,
@@ -496,6 +585,10 @@ static void build_dsdt(GArray *table_data,
                              VIRTIO_IRQ + VIRT_IRQCHIP_NUM_SOURCES, 0,
                              VIRTIO_COUNT);
         acpi_dsdt_add_gpex_host(scope, PCIE_IRQ + VIRT_IRQCHIP_NUM_SOURCES * 2);
+    }
+
+    if (s->acpi_ged) {
+        build_rv_ged_aml(dsdt, s);
     }
 
     aml_append(dsdt, scope);
